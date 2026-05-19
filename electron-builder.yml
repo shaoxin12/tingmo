@@ -1,0 +1,32 @@
+appId: com.tingmo.app
+productName: 听墨
+copyright: Copyright © 2025
+directories:
+  output: release
+  buildResources: assets
+files:
+  - dist
+  - dist-electron
+  - models
+  - node_modules
+  - package.json
+asarUnpack:
+  - "node_modules/koffi/**"
+  - "node_modules/onnxruntime-node/**"
+  - "**/*.node"
+  - "models/**"
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: assets/icons/icon.ico
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 听墨
+extraResources:
+  - from: models/
+    to: models/

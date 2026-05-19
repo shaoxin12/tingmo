@@ -1,0 +1,32 @@
+{
+  "name": "tingmo",
+  "version": "0.1.0",
+  "description": "听墨 - 桌面 AI 语音输入法",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run build:main && npm run build:renderer",
+    "build:main": "esbuild electron/main.ts --bundle --platform=node --outfile=dist-electron/main.js --external:electron --external:koffi --external:path --external:onnxruntime-node --format=cjs && esbuild electron/preload.ts --bundle --platform=node --outfile=dist-electron/preload.js --external:electron --external:koffi --format=cjs",
+    "build:renderer": "tsc && vite build",
+    "electron:dev": "npm run build:main && node -e \"process.env.NODE_ENV='development';delete process.env.ELECTRON_RUN_AS_NODE;delete process.env.ELECTRON_FORCE_IS_PACKAGED;require('child_process').spawn(require('electron'),['.'],{stdio:'inherit',env:{...process.env,NODE_ENV:'development'}})\"",
+    "electron:build": "npm run build && electron-builder",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "koffi": "^2.10.0",
+    "onnxruntime-node": "^1.26.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.0"
+  }
+}
