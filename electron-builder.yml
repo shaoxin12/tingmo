@@ -12,12 +12,14 @@ files:
 asar: false
 win:
   target:
-    - target: msi
+    - target: nsis
       arch:
         - x64
   icon: assets/icons/icon.ico
-msi:
+nsis:
+  oneClick: false
   perMachine: false
+  allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: TingMo
