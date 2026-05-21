@@ -2,7 +2,7 @@
 
 > AI 赋能的 Windows 桌面语音输入法 | 🎤 Vibe Coding 项目
 
-*[English](#english) is available below.*
+*[English version](README_EN.md)*
 
 ![version](https://img.shields.io/badge/version-0.2-orange)
 ![platform](https://img.shields.io/badge/platform-Windows%20x64-blue)
@@ -85,31 +85,3 @@ npm run electron:dev   # 终端 2: 构建 + Electron
 ## License
 
 MIT
-
----
-
-## English {#english}
-
-TingMo is an AI-powered voice input app for Windows. Press a hotkey, speak, and your words appear at the cursor. Works fully offline with optional LLM refinement.
-
-### Features
-
-- **Local ASR** — Paraformer-large INT8 ONNX, runs offline
-- **Punctuation** — CT-Transformer model adds `，。？！、`
-- **LLM Refine** (optional) — Removes filler words, auto-structures, preserves custom terms
-- **Translation** — ASR → translate to target language
-- **Dictionary** — Add custom terms for fuzzy correction and LLM context
-- **5-language UI** — 简体/繁體/English/日本語/한국어
-- **Minimal UI** — Floating capsule, no buttons
-
-### Install
-
-Download `TingMo-Setup-0.2.exe` from [Releases](https://github.com/shaoxin12/tingmo/releases).
-
-### Use
-
-Press hotkey → speak → press again. Right-click tray for settings. Hotkeys are customizable.
-
-### Vibe Coding
-
-This project was built through vibe coding — rapid AI-assisted development. Issues and PRs welcome.
