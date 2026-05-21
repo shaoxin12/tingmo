@@ -1,22 +1,56 @@
 import { app, BrowserWindow, ipcMain, session, Tray } from 'electron';
 import { join } from 'path';
-import { createTray, updateTrayState } from './tray';
+import { createTray, updateTrayState, updateTrayLanguage } from './tray';
 import { startHotkey, stopHotkey, setHotkeyCallback, waitForHotkeyRelease } from './hotkey';
 import { injectText } from './text-inserter';
 import { ensureModel } from '../src/services/model-downloader';
+import { duckSystemAudio, unduckSystemAudio } from './audio-ducking';
+import { addRecordingStats, addHistoryEntry, loadStats, loadHistory, clearHistory } from './stats-history';
+
+// Single instance lock — prevent double tray icon
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+}
+
+const koffi = require('koffi');
+
+// Strip DWM shadow/border from transparent frameless window
+function stripDwmFrame(win: BrowserWindow): void {
+  const dwmapi = koffi.load('dwmapi.dll');
+  const DwmSetWindowAttribute = dwmapi.func(
+    'DwmSetWindowAttribute', 'int32', ['void*', 'uint32', 'void*', 'uint32'],
+  );
+  const hwnd = koffi.as(win.getNativeWindowHandle(), 'void*');
+  const policy = Buffer.alloc(4);
+  policy.writeInt32LE(1, 0); // DWMNCRP_DISABLED = 1
+  DwmSetWindowAttribute(hwnd, 2, koffi.as(policy, 'void*'), 4); // DWMWA_NCRENDERING_POLICY = 2
+}
 
 let floatingWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
 let downloadWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 
-type VoiceState = 'idle' | 'recording' | 'recognizing' | 'success' | 'error';
+type VoiceState = 'idle' | 'recording' | 'recognizing' | 'refining' | 'success' | 'error';
 
 let currentState: VoiceState = 'idle';
 let floatingPosition: { x: number; y: number } | null = null;
 let floatingReady = false;
 let pendingState: VoiceState | null = null;
 let autoDismissTimer: ReturnType<typeof setTimeout> | null = null;
+let recordingStartedAt: number = 0;
+let translateMode: boolean = false;
+let translateModifierVK: number = 0xA1; // default: VK_RSHIFT
+
+// Key name → VK code mapping for translate modifier
+const MODIFIER_VK_MAP: Record<string, number> = {
+  '右 Shift': 0xA1, 'Right Shift': 0xA1,
+  '右 Ctrl': 0xA3, 'Right Ctrl': 0xA3,
+  '左 Shift': 0xA0, 'Left Shift': 0xA0,
+  '左 Ctrl': 0xA2, 'Left Ctrl': 0xA2,
+  '右 Alt': 0xA5, 'Right Alt': 0xA5,
+  '左 Alt': 0xA4, 'Left Alt': 0xA4,
+};
 
 function clearAutoDismiss(): void {
   if (autoDismissTimer) {
@@ -31,25 +65,148 @@ let recognitionReady = false;
 
 async function initRecognition(): Promise<void> {
   try {
-    const { SenseVoiceORTProvider } = require('../src/services/sensevoice-ort');
     const fs = require('fs');
 
-    const modelDir = join(app.getPath('userData'), 'models');
-    const modelPath = join(modelDir, 'sensevoice-small', 'model.onnx');
-    const tokensPath = join(modelDir, 'sensevoice-small', 'tokens.json');
+    // Read ASR provider preference from settings
+    let provider: 'local' | 'cloud' = 'local';
+    try {
+      const settingsPath = join(app.getPath('userData'), 'data', 'llm-settings.json');
+      if (fs.existsSync(settingsPath)) {
+        const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+        provider = settings.asrProvider || 'local';
+      }
+    } catch { /* use default */ }
 
-    // Download model on first launch if missing
-    if (!fs.existsSync(modelPath)) {
-      await downloadModel(modelDir);
+    if (provider === 'cloud') {
+      const { FunASRCloudProvider } = require('../src/services/funasr-cloud');
+      recognitionProvider = new FunASRCloudProvider('', '');
+      recognitionReady = await recognitionProvider.initialize();
+      console.log('[Main] Recognition ready (cloud):', recognitionReady);
+    } else {
+      const { FunASRORTProvider } = require('../src/services/funasr-ort');
+
+      const modelDir = join(app.getPath('userData'), 'models');
+      const funasrDir = join(modelDir, 'funasr');
+      const modelPath = join(funasrDir, 'paraformer-large-int8.onnx');
+
+      // Download model on first launch if missing
+      if (!fs.existsSync(modelPath)) {
+        await downloadModel(modelDir);
+      }
+
+      console.log('[Main] Loading Paraformer model from:', modelPath);
+      recognitionProvider = new FunASRORTProvider(funasrDir);
+      recognitionReady = await recognitionProvider.initialize();
+      console.log('[Main] Recognition ready (local):', recognitionReady);
     }
-
-    console.log('[Main] Loading SenseVoice model from:', modelPath);
-    recognitionProvider = new SenseVoiceORTProvider(modelPath, tokensPath);
-    recognitionReady = await recognitionProvider.initialize();
-    console.log('[Main] Recognition ready:', recognitionReady);
   } catch (err: any) {
     console.error('[Main] Failed to init recognition:', err.message);
     recognitionReady = false;
+  }
+}
+
+// Refinement provider (LLM) — lazy init
+let refinementProvider: any = null;
+let refinementReady = false;
+
+async function initRefinement(): Promise<void> {
+  try {
+    const { safeStorage } = require('electron');
+    const fs = require('fs');
+    const apiKeyPath = join(app.getPath('userData'), 'data', 'apikey.enc');
+
+    // Read encrypted API key
+    let apiKey = '';
+    if (fs.existsSync(apiKeyPath)) {
+      try {
+        const encrypted = fs.readFileSync(apiKeyPath);
+        apiKey = safeStorage.decryptString(encrypted);
+      } catch { /* key not decryptable */ }
+    }
+
+    // Read settings for model/baseUrl
+    const settingsPath = join(app.getPath('userData'), 'data', 'llm-settings.json');
+    let model = 'gpt-4o-mini';
+    let baseUrl = 'https://api.openai.com/v1';
+    let refineEnabled = false;
+    if (fs.existsSync(settingsPath)) {
+      try {
+        const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+        model = settings.llmModel || model;
+        baseUrl = settings.llmBaseUrl || baseUrl;
+        refineEnabled = settings.refineEnabled ?? false;
+      } catch { /* ignore */ }
+    }
+
+    if (apiKey && refineEnabled) {
+      const { OpenAIProvider } = require('../src/services/llm-openai');
+      refinementProvider = new OpenAIProvider({ apiKey, model, baseUrl });
+      refinementReady = true;
+      console.log('[Main] Refinement ready:', model);
+    } else {
+      refinementProvider = null;
+      refinementReady = false;
+      console.log('[Main] Refinement disabled (no API key or turned off)');
+    }
+  } catch (err: any) {
+    console.error('[Main] Failed to init refinement:', err.message);
+    refinementProvider = null;
+    refinementReady = false;
+  }
+}
+
+// Dictionary fuzzy correction — edit-distance based, catches homophone errors
+// Only replace when edit distance ≤ 1 for keys ≤3 chars, or ≤2 for longer keys
+function applyDictionary(text: string, dictionary: Array<{word: string; replace: string}>): string {
+  for (const entry of dictionary) {
+    const word = entry.word;
+    const replace = entry.replace;
+    if (text.includes(word)) continue; // exact match, nothing to fix
+
+    const maxDist = word.length <= 3 ? 1 : 2;
+    const wlen = word.length;
+
+    // Sliding window: check substrings of similar length
+    for (let i = 0; i <= text.length; i++) {
+      for (let len = Math.max(1, wlen - 1); len <= Math.min(wlen + 2, text.length - i); len++) {
+        const sub = text.slice(i, i + len);
+        const dist = levenshtein(sub, word);
+        if (dist <= maxDist && dist < wlen * 0.6) {
+          text = text.slice(0, i) + replace + text.slice(i + len);
+          console.log('[Main] Dict corrected:', JSON.stringify(sub), '→', JSON.stringify(replace), '(dist=' + dist + ')');
+          break; // stop scanning this entry after first correction
+        }
+      }
+    }
+  }
+  return text;
+}
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp: number[] = Array(n + 1).fill(0).map((_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const temp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1]
+        ? prev
+        : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = temp;
+    }
+  }
+  return dp[n];
+}
+
+async function isNetworkAvailable(): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 2000);
+    await fetch('https://api.openai.com/v1/models', { method: 'HEAD', signal: controller.signal });
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -92,19 +249,36 @@ async function downloadModel(modelDir: string): Promise<void> {
   downloadWindow = createDownloadWindow();
   downloadWindow.show();
 
-  await ensureModel(modelDir, (p) => {
+  try {
+    await ensureModel(modelDir, (p) => {
+      if (downloadWindow && !downloadWindow.isDestroyed()) {
+        downloadWindow.webContents.send('model:progress', p);
+      }
+      if (p.stage === 'done') {
+        setTimeout(() => {
+          if (downloadWindow && !downloadWindow.isDestroyed()) {
+            downloadWindow.close();
+            downloadWindow = null;
+          }
+        }, 600);
+      }
+      if (p.stage === 'error') {
+        console.error('[Main] Model download error:', p.error);
+        setTimeout(() => {
+          if (downloadWindow && !downloadWindow.isDestroyed()) {
+            downloadWindow.close();
+            downloadWindow = null;
+          }
+        }, 2000);
+      }
+    });
+  } catch (err: any) {
+    console.error('[Main] Model download failed:', err.message);
     if (downloadWindow && !downloadWindow.isDestroyed()) {
-      downloadWindow.webContents.send('model:progress', p);
+      downloadWindow.close();
+      downloadWindow = null;
     }
-    if (p.stage === 'done') {
-      setTimeout(() => {
-        if (downloadWindow && !downloadWindow.isDestroyed()) {
-          downloadWindow.close();
-          downloadWindow = null;
-        }
-      }, 600);
-    }
-  });
+  }
 }
 
 function createFloatingWindow(): BrowserWindow {
@@ -126,6 +300,7 @@ function createFloatingWindow(): BrowserWindow {
   });
 
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  stripDwmFrame(win);
   floatingReady = false;
 
   if (floatingPosition) {
@@ -182,6 +357,14 @@ function sendToRenderer(channel: string, data?: unknown): void {
 }
 
 function setVoiceState(state: VoiceState): void {
+  // Track recording start time for stats
+  if (state === 'recording' && currentState !== 'recording') {
+    recordingStartedAt = Date.now();
+    duckSystemAudio().catch(e => console.error('[Main] duck error:', e));
+  } else if (currentState === 'recording' && state !== 'recording') {
+    unduckSystemAudio().catch(e => console.error('[Main] unduck error:', e));
+  }
+
   currentState = state;
   sendToRenderer('voice:state-change', { state });
 
@@ -204,10 +387,10 @@ function createSettingsWindow(): void {
   }
 
   settingsWindow = new BrowserWindow({
-    width: 560,
-    height: 520,
-    minWidth: 480,
-    minHeight: 400,
+    width: 900,
+    height: 600,
+    minWidth: 900,
+    minHeight: 600,
     resizable: true,
     title: 'TINGMO · 设置',
     autoHideMenuBar: true,
@@ -235,10 +418,22 @@ setHotkeyCallback(async (pressed: boolean) => {
 
   clearAutoDismiss();
 
+  // Detect translate modifier key for translation mode
+  const user32 = koffi.load('user32.dll');
+  const GetAsyncKeyState = user32.func('GetAsyncKeyState', 'int16', ['int32']);
+  const modifierDown = (GetAsyncKeyState(translateModifierVK) & 0x8000) !== 0;
+  if (modifierDown && currentState === 'idle') {
+    translateMode = true;
+  }
+
   switch (currentState) {
     case 'idle': {
       showFloatingWindow();
       setVoiceState('recording');
+      // Send translate mode to renderer
+      if (translateMode) {
+        sendToRenderer('voice:translate-mode', { enabled: true });
+      }
       break;
     }
     case 'recording': {
@@ -250,6 +445,7 @@ setHotkeyCallback(async (pressed: boolean) => {
       // Dismiss floating window, go back to idle
       hideFloatingWindow();
       setVoiceState('idle');
+      translateMode = false;
       break;
     }
   }
@@ -267,6 +463,84 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('settings:open', () => {
     createSettingsWindow();
+  });
+
+  ipcMain.handle('stats:get', () => loadStats());
+  ipcMain.handle('history:get', () => loadHistory());
+  ipcMain.handle('history:clear', () => { clearHistory(); });
+  ipcMain.handle('settings:set-translate-modifier', (_event, keyName: string) => {
+    translateModifierVK = MODIFIER_VK_MAP[keyName] ?? 0xA1;
+    console.log('[Main] Translate modifier set to', keyName, 'VK =', translateModifierVK);
+  });
+
+  // System locale detection
+  ipcMain.handle('settings:get-system-locale', () => {
+    const locale = app.getLocale() || 'zh-CN';
+    let lang: string;
+    if (locale === 'zh-TW' || locale === 'zh-HK' || locale === 'zh-MO') lang = 'zh-TW';
+    else if (locale.startsWith('zh')) lang = 'zh-CN';
+    else if (locale.startsWith('ja')) lang = 'ja';
+    else if (locale.startsWith('ko')) lang = 'ko';
+    else lang = 'en';
+    console.log('[Main] System locale:', locale, '→', lang);
+    return lang;
+  });
+
+  ipcMain.handle('settings:set-ui-language', (_event, lang: string) => {
+    updateTrayLanguage(tray, lang, createSettingsWindow);
+  });
+
+  // LLM / Refinement settings
+  ipcMain.handle('settings:get-api-key', () => {
+    try {
+      const fs = require('fs');
+      const { safeStorage } = require('electron');
+      const apiKeyPath = join(app.getPath('userData'), 'data', 'apikey.enc');
+      if (fs.existsSync(apiKeyPath)) {
+        const encrypted = fs.readFileSync(apiKeyPath);
+        return safeStorage.decryptString(encrypted);
+      }
+    } catch { /* ignore */ }
+    return '';
+  });
+
+  ipcMain.handle('settings:set-api-key', (_event, key: string) => {
+    try {
+      const fs = require('fs');
+      const { safeStorage } = require('electron');
+      const dir = join(app.getPath('userData'), 'data');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const encrypted = safeStorage.encryptString(key);
+      fs.writeFileSync(join(dir, 'apikey.enc'), encrypted);
+    } catch (err: any) {
+      console.error('[Main] Failed to save API key:', err.message);
+    }
+  });
+
+  ipcMain.handle('settings:save-llm-settings', (_event, settings: { refineEnabled?: boolean; llmModel?: string; llmBaseUrl?: string; asrProvider?: string }) => {
+    try {
+      const fs = require('fs');
+      const dir = join(app.getPath('userData'), 'data');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const settingsPath = join(dir, 'llm-settings.json');
+      let existing: any = {};
+      if (fs.existsSync(settingsPath)) {
+        try { existing = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')); } catch { /* ignore */ }
+      }
+      Object.assign(existing, settings);
+      fs.writeFileSync(settingsPath, JSON.stringify(existing, null, 2));
+    } catch (err: any) {
+      console.error('[Main] Failed to save LLM settings:', err.message);
+    }
+  });
+
+  ipcMain.handle('settings:init-refinement', async () => {
+    await initRefinement();
+    return refinementReady;
+  });
+
+  ipcMain.handle('settings:refinement-status', () => {
+    return { ready: refinementReady, provider: refinementProvider?.name || null };
   });
 
   ipcMain.handle('voice:finish-recording', () => {
@@ -287,17 +561,19 @@ app.whenReady().then(async () => {
   });
 
   // Audio transcription from renderer
-  ipcMain.handle('voice:transcribe', async (_event, audioBuffer: ArrayBuffer, language?: string) => {
+  ipcMain.handle('voice:transcribe', async (_event, audioBuffer: ArrayBuffer, language?: string, options?: {
+    translate?: boolean; translateTarget?: string; dictionary?: Array<{word: string; replace: string}>;
+  }) => {
     try {
       console.log('[Main] Transcribe: buffer =', audioBuffer.byteLength, 'bytes, lang =', language);
       const buf = Buffer.from(audioBuffer);
       let text: string;
 
       if (recognitionReady && recognitionProvider) {
-        console.log('[Main] Running SenseVoice...');
+        console.log('[Main] Running Paraformer...');
         const result = await recognitionProvider.transcribe(buf, 16000, language);
         text = result.text;
-        console.log('[Main] SenseVoice result:', text);
+        console.log('[Main] Paraformer result:', text);
       } else {
         // Fallback to mock if model not ready
         console.log('[Main] Using mock (model not ready)');
@@ -305,10 +581,68 @@ app.whenReady().then(async () => {
         text = '这是一段测试文本，通过听墨语音输入法识别。';
       }
 
+      // Dictionary fuzzy correction — always runs, offline or online
+      if (options?.dictionary && options.dictionary.length > 0 && text.length > 0) {
+        text = applyDictionary(text, options.dictionary);
+        console.log('[Main] After dictionary:', text.slice(0, 80));
+      }
+
+      // LLM Refinement — remove filler words, auto-structure, dictionary-aware
+      let originalText = text;
+      if (refinementReady && refinementProvider && text.trim().length > 0 && !options?.translate) {
+        const online = await isNetworkAvailable();
+        if (online) {
+          try {
+            setVoiceState('refining');
+            const result = await refinementProvider.refine(text, {
+              language,
+              dictionary: options?.dictionary ?? [],
+            });
+            text = result.refinedText;
+            console.log('[Main] Refined:', text.slice(0, 80));
+          } catch (err: any) {
+            console.error('[Main] Refine failed, using raw ASR:', err.message);
+          }
+        } else {
+          console.log('[Main] Offline — skipping refinement');
+        }
+      }
+
+      // LLM Translation
+      if (options?.translate && text.trim()) {
+        const target = options.translateTarget || 'en';
+        console.log('[Main] Translating to', target, ':', text.slice(0, 40));
+        if (refinementReady && refinementProvider) {
+          const online = await isNetworkAvailable();
+          if (online) {
+            try {
+              setVoiceState('refining');
+              const result = await refinementProvider.translate(text, target, {
+                language,
+                dictionary: options?.dictionary ?? [],
+              });
+              text = result.refinedText;
+              console.log('[Main] Translated:', text.slice(0, 80));
+            } catch (err: any) {
+              console.error('[Main] Translation failed:', err.message);
+              text = `[${target.toUpperCase()}] ${text}`;
+            }
+          } else {
+            console.log('[Main] Offline — translation skipped');
+            text = `[${target.toUpperCase()}] ${text}`;
+          }
+        } else {
+          text = `[${target.toUpperCase()}] ${text}`;
+        }
+      }
+
       console.log('[Main] Injecting text:', text.slice(0, 40));
       await waitForHotkeyRelease();
       const injectResult = await injectText(text);
       if (injectResult.success) {
+        const durationMs = Date.now() - recordingStartedAt;
+        addRecordingStats(durationMs, text.length);
+        addHistoryEntry(text, text.length, originalText, refinementProvider?.name || null);
         setVoiceState('success');
         sendToRenderer('voice:recognition-done', {
           charCount: injectResult.charCount,
@@ -356,7 +690,8 @@ app.whenReady().then(async () => {
   // Init recognition in background
   initRecognition();
 
-  tray = createTray(createSettingsWindow);
+  const initLocale = app.getLocale()?.startsWith('zh') ? 'zh-CN' : 'en';
+  tray = createTray(initLocale, createSettingsWindow);
   startHotkey();
 });
 

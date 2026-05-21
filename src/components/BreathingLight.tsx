@@ -8,7 +8,10 @@ interface Props {
 export const BreathingLight: React.FC<Props> = ({ state }) => {
   if (state === 'idle' || state === 'success') return null;
 
+  // 'refining' uses the same spinning ring as 'recognizing'
+  const displayState = state === 'refining' ? 'recognizing' : state;
+
   return (
-    <div className={`breathing-light ${state}`} />
+    <div className={`breathing-light ${displayState}`} />
   );
 };

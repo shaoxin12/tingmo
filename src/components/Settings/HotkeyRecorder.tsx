@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useI18n } from '../../i18n/context';
 
 interface Props {
   currentHotkey: string;
@@ -6,24 +7,32 @@ interface Props {
   onReset: () => void;
 }
 
-const KEY_NAMES: Record<string, string> = {
-  'Control': 'Ctrl',
-  'Alt': 'Alt',
-  'Shift': 'Shift',
-  'Meta': 'Win',
-  'AltGraph': 'Right Alt',
-};
+// Map key codes to i18n keys
+function keyCodeToI18n(code: string): string {
+  if (code.includes('Right')) {
+    if (code.startsWith('Control')) return 'hotkey.key.rightCtrl';
+    if (code.startsWith('Alt')) return 'hotkey.key.rightAlt';
+    if (code.startsWith('Shift')) return 'hotkey.key.rightShift';
+  }
+  if (code.includes('Left')) {
+    if (code.startsWith('Control')) return 'hotkey.key.leftCtrl';
+    if (code.startsWith('Alt')) return 'hotkey.key.leftAlt';
+    if (code.startsWith('Shift')) return 'hotkey.key.leftShift';
+  }
+  if (code.startsWith('Meta')) return 'hotkey.key.win';
+  return '';
+}
 
 export const HotkeyRecorder: React.FC<Props> = ({ currentHotkey, onHotkeyChange, onReset }) => {
+  const { t } = useI18n();
   const [isRecording, setIsRecording] = useState(false);
-  const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
+  const [display, setDisplay] = useState('');
   const keysRef = useRef<Set<string>>(new Set());
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (!isRecording) return;
     e.preventDefault();
     e.stopPropagation();
-
     keysRef.current.add(e.code);
 
     const parts: string[] = [];
@@ -32,28 +41,26 @@ export const HotkeyRecorder: React.FC<Props> = ({ currentHotkey, onHotkeyChange,
     if (e.shiftKey) parts.push('Shift');
     if (e.metaKey) parts.push('Win');
 
-    if (!['ControlLeft', 'ControlRight', 'AltLeft', 'AltRight',
+    const i18nKey = keyCodeToI18n(e.code);
+    if (i18nKey) {
+      parts.push(t(i18nKey));
+    } else if (!['ControlLeft', 'ControlRight', 'AltLeft', 'AltRight',
       'ShiftLeft', 'ShiftRight', 'MetaLeft', 'MetaRight'].includes(e.code)) {
-      const keyName = KEY_NAMES[e.key] || (e.key.length === 1 ? e.key.toUpperCase() : e.key);
-      parts.push(keyName);
+      parts.push(e.key.length === 1 ? e.key.toUpperCase() : e.key);
     }
 
-    setRecordedKeys(parts);
-  }, [isRecording]);
+    setDisplay(parts.join(' + '));
+  }, [isRecording, t]);
 
   const handleKeyUp = useCallback((e: KeyboardEvent) => {
     if (!isRecording) return;
     e.preventDefault();
-
     keysRef.current.delete(e.code);
-
-    if (keysRef.current.size === 0 && recordedKeys.length > 0) {
-      const hotkey = recordedKeys.join(' + ');
-      onHotkeyChange(hotkey);
+    if (keysRef.current.size === 0 && display) {
+      onHotkeyChange(display);
       setIsRecording(false);
-      setRecordedKeys([]);
     }
-  }, [isRecording, recordedKeys, onHotkeyChange]);
+  }, [isRecording, display, onHotkeyChange]);
 
   useEffect(() => {
     if (isRecording) {
@@ -66,28 +73,29 @@ export const HotkeyRecorder: React.FC<Props> = ({ currentHotkey, onHotkeyChange,
     }
   }, [isRecording, handleKeyDown, handleKeyUp]);
 
+  const handleClick = () => {
+    if (!isRecording) {
+      setIsRecording(true);
+      setDisplay('');
+      keysRef.current.clear();
+    }
+  };
+
+  const handleReset = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onReset();
+  };
+
   return (
-    <>
-      <div className="nb-row">
-        <span className="nb-label">当前快捷键</span>
-        <span className={`nb-key ${isRecording ? 'recording' : ''}`}>
-          {isRecording
-            ? (recordedKeys.length > 0 ? recordedKeys.join(' + ') : '请按键...')
-            : currentHotkey}
-        </span>
-      </div>
-      <div className="nb-actions">
-        <button
-          className={`nb-btn ${isRecording ? '' : 'primary'}`}
-          onClick={() => { setIsRecording(true); setRecordedKeys([]); keysRef.current.clear(); }}
-          disabled={isRecording}
-        >
-          {isRecording ? 'RECORDING...' : '录制新快捷键'}
-        </button>
-        <button className="nb-btn" onClick={onReset} disabled={isRecording}>
-          恢复默认
-        </button>
-      </div>
-    </>
+    <div className="hotkey-row">
+      <span
+        className={`nb-key hotkey-target ${isRecording ? 'recording' : ''}`}
+        onClick={handleClick}
+        title={isRecording ? t('hotkey.recordingTooltip') : t('hotkey.clickToReset')}
+      >
+        {isRecording ? (display || t('hotkey.recordingPlaceholder')) : currentHotkey}
+      </span>
+      <button className="hotkey-reset" onClick={handleReset} title={t('hotkey.resetToDefault')}>↺</button>
+    </div>
   );
 };

@@ -9,6 +9,7 @@ const MOCK_TEXTS = [
 export class MockRecognitionProvider implements IRecognitionProvider {
   readonly name = 'Mock';
   readonly type = 'api' as const;
+  readonly vadEnabled = false;
   isReady = true;
 
   async initialize(): Promise<boolean> {

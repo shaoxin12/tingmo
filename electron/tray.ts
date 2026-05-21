@@ -1,93 +1,79 @@
-import { Tray, Menu, nativeImage } from 'electron';
+import { Tray, Menu, nativeImage, NativeImage } from 'electron';
+import { join } from 'path';
+import { trayT } from './tray-i18n';
 
-let voiceMode: 'local' | 'api' = 'local';
+type Locale = string;
 
-function createTrayIcon(state: 'default' | 'recording' | 'recognizing'): Electron.NativeImage {
-  const size = 16;
-  const canvas = Buffer.alloc(size * size * 4);
+let asrProvider: 'local' | 'cloud' = 'local';
 
-  for (let i = 0; i < size * size; i++) {
-    const x = i % size;
-    const y = Math.floor(i / size);
-    const cx = size / 2;
-    const cy = size / 2;
-    const dist = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2);
-    const idx = i * 4;
+// Load base icon from assets (also used as app icon)
+const baseIconPath = join(__dirname, '../assets/icons/icon.png');
+let baseIcon: NativeImage;
 
-    if (dist < 6) {
-      if (state === 'recording') {
-        canvas[idx] = 255;
-        canvas[idx + 1] = 85;
-        canvas[idx + 2] = 85;
-        canvas[idx + 3] = 255;
-      } else if (state === 'recognizing') {
-        canvas[idx] = 74;
-        canvas[idx + 1] = 144;
-        canvas[idx + 2] = 255;
-        canvas[idx + 3] = 255;
-      } else {
-        canvas[idx] = 0;
-        canvas[idx + 1] = 229;
-        canvas[idx + 2] = 255;
-        canvas[idx + 3] = 255;
-      }
-    } else if (dist < 7) {
-      const alpha = Math.max(0, (7 - dist) * 255);
-      if (state === 'recording') {
-        canvas[idx] = 255;
-        canvas[idx + 1] = 85;
-        canvas[idx + 2] = 85;
-        canvas[idx + 3] = Math.min(255, alpha);
-      } else if (state === 'recognizing') {
-        canvas[idx] = 74;
-        canvas[idx + 1] = 144;
-        canvas[idx + 2] = 255;
-        canvas[idx + 3] = Math.min(255, alpha);
-      } else {
-        canvas[idx] = 0;
-        canvas[idx + 1] = 229;
-        canvas[idx + 2] = 255;
-        canvas[idx + 3] = Math.min(255, alpha);
-      }
-    }
+function loadBaseIcon(): NativeImage {
+  if (!baseIcon) {
+    baseIcon = nativeImage.createFromPath(baseIconPath);
   }
-
-  return nativeImage.createFromBuffer(canvas, { width: size, height: size });
+  return baseIcon;
 }
 
-export function createTray(openSettings: () => void): Tray {
-  const icon = createTrayIcon('default');
-  const tray = new Tray(icon);
-  tray.setToolTip('听墨');
+function createTrayIcon(state: 'default' | 'recording' | 'recognizing'): NativeImage {
+  const img = loadBaseIcon().resize({ width: 32, height: 32, quality: 'best' });
 
-  const contextMenu = Menu.buildFromTemplate([
+  if (state === 'recording') return tintIcon(img, 255, 85, 85);
+  if (state === 'recognizing') return tintIcon(img, 74, 144, 255);
+  return img;
+}
+
+function tintIcon(icon: NativeImage, r: number, g: number, b: number): NativeImage {
+  const size = 32;
+  const buf = icon.toBitmap();
+  for (let py = size / 2; py < size; py++) {
+    for (let px = size / 2; px < size; px++) {
+      const dx = px - size + 10;
+      const dy = py - size + 10;
+      if (dx * dx + dy * dy > 22) continue;
+      const idx = (py * size + px) * 4;
+      buf[idx] = r;
+      buf[idx + 1] = g;
+      buf[idx + 2] = b;
+      buf[idx + 3] = 255;
+    }
+  }
+  return nativeImage.createFromBuffer(buf, { width: size, height: size });
+}
+
+function buildMenu(locale: Locale, openSettings: () => void): Menu {
+  const t = (key: string) => trayT(locale, key);
+
+  return Menu.buildFromTemplate([
     {
-      label: '语音模式',
+      label: t('tray.voiceMode'),
       submenu: [
         {
-          label: '本地',
+          label: t('tray.voiceMode.local'),
           type: 'radio',
-          checked: voiceMode === 'local',
-          click: () => { voiceMode = 'local'; },
+          checked: asrProvider === 'local',
+          click: () => { asrProvider = 'local'; },
         },
         {
-          label: 'API',
+          label: t('tray.voiceMode.cloud'),
           type: 'radio',
-          checked: voiceMode === 'api',
-          click: () => { voiceMode = 'api'; },
+          checked: asrProvider === 'cloud',
+          click: () => { asrProvider = 'cloud'; },
         },
       ],
     },
     {
-      label: '录音模式',
+      label: t('tray.recordMode'),
       submenu: [
         {
-          label: '切换',
+          label: t('tray.recordMode.toggle'),
           type: 'radio',
           checked: true,
         },
         {
-          label: '按住',
+          label: t('tray.recordMode.hold'),
           type: 'radio',
           enabled: false,
           checked: false,
@@ -96,23 +82,37 @@ export function createTray(openSettings: () => void): Tray {
     },
     { type: 'separator' },
     {
-      label: '设置',
+      label: t('tray.settings'),
       click: () => openSettings(),
     },
     { type: 'separator' },
     {
-      label: '退出',
+      label: t('tray.quit'),
       click: () => {
         const { app } = require('electron');
         app.quit();
       },
     },
   ]);
+}
 
-  tray.setContextMenu(contextMenu);
+export function createTray(locale: Locale, openSettings: () => void): Tray {
+  const icon = createTrayIcon('default');
+  const tray = new Tray(icon);
+  tray.setToolTip(trayT(locale, 'tray.tooltip'));
+
+  const menu = buildMenu(locale, openSettings);
+  tray.setContextMenu(menu);
   tray.on('click', () => openSettings());
 
   return tray;
+}
+
+export function updateTrayLanguage(tray: Tray | null, locale: Locale, openSettings: () => void): void {
+  if (!tray || tray.isDestroyed()) return;
+  tray.setToolTip(trayT(locale, 'tray.tooltip'));
+  const menu = buildMenu(locale, openSettings);
+  tray.setContextMenu(menu);
 }
 
 export function updateTrayState(

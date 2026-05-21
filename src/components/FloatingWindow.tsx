@@ -2,15 +2,20 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import { useAudioCapture } from '../hooks/useAudioCapture';
 import { useSettingsStore } from '../store/settings';
+import { useI18n } from '../i18n/context';
 import { BreathingLight } from './BreathingLight';
 import { Waveform } from './Waveform';
 import { StatusOverlay } from './StatusOverlay';
 import { ErrorPanel } from './ErrorPanel';
 
 export const FloatingWindow: React.FC = () => {
-  const { state, errorText, retry, copy } = useVoiceInput();
+  const { state, errorText, translateMode, retry, copy } = useVoiceInput();
   const { audioLevel, startCapture, stopCapture } = useAudioCapture();
+  const { t } = useI18n();
   const language = useSettingsStore((s) => s.language);
+  const translateTarget = useSettingsStore((s) => s.translateTarget);
+  const useDictionary = useSettingsStore((s) => s.useDictionary);
+  const dictionary = useSettingsStore((s) => s.dictionary);
   const [toneClass, setToneClass] = useState('');
   const sentAudioRef = useRef(false);
 
@@ -24,20 +29,25 @@ export const FloatingWindow: React.FC = () => {
       setToneClass('');
       sentAudioRef.current = false;
     } else if (state === 'recognizing') {
-      const wavBuffer = stopCapture();
+      const result = stopCapture();
       setToneClass('');
-      if (wavBuffer && !sentAudioRef.current) {
+      if (result && !sentAudioRef.current) {
         sentAudioRef.current = true;
-        window.tingmo?.transcribe(wavBuffer, language);
-      } else if (!wavBuffer) {
-        window.tingmo?.reportCaptureError('没有采集到音频，请检查麦克风权限');
+        const opts = {
+          translate: translateMode,
+          translateTarget,
+          dictionary: useDictionary ? dictionary : [],
+        };
+        (window.tingmo as any).transcribe(result.wav, language, opts);
+      } else if (!result) {
+        window.tingmo?.reportCaptureError(t('error.noAudioCaptured'));
       }
     } else if (state === 'success') {
       setToneClass('success');
     } else if (state === 'error') {
       setToneClass('error');
     }
-  }, [state, startCapture, stopCapture]);
+  }, [state, startCapture, stopCapture, translateMode, translateTarget, useDictionary, dictionary]);
 
   if (state === 'idle') return null;
 
@@ -46,13 +56,14 @@ export const FloatingWindow: React.FC = () => {
       <div className="capsule-body">
         <BreathingLight state={state} />
         {state === 'recording' && <Waveform audioLevel={audioLevel} />}
-        {state === 'recognizing' && <StatusOverlay text="识别中" />}
-        {state === 'success' && <StatusOverlay text="完成" />}
+        {state === 'recognizing' && <StatusOverlay text={t('status.recognizing')} />}
+        {state === 'refining' && <StatusOverlay text={t('status.refining')} />}
+        {state === 'success' && <StatusOverlay text={t('status.success')} />}
         {state === 'error' && (
           errorText ? (
             <ErrorPanel text={errorText} onRetry={retry} onCopy={copy} />
           ) : (
-            <StatusOverlay text="失败" />
+            <StatusOverlay text={t('status.error')} />
           )
         )}
       </div>

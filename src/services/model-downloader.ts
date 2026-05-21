@@ -1,11 +1,11 @@
-// Main-process model downloader — downloads sensevoice-small model on first launch
+// Main-process model downloader — downloads Paraformer-large model on first launch
 
 import https from 'https';
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 
-const MODEL_URL = 'https://github.com/hreplo/tingmo/releases/download/v0.1.0/sensevoice-small.tar.gz';
+const MODEL_URL = 'https://github.com/yangshaoxin12/tingmo/releases/download/v0.1.0/funasr-paraformer-large.tar.gz';
 
 export interface DownloadProgress {
   stage: 'downloading' | 'extracting' | 'done' | 'error';
@@ -13,12 +13,54 @@ export interface DownloadProgress {
   error?: string;
 }
 
+function fail(reject: (e: Error) => void, onProgress: (p: DownloadProgress) => void, msg: string): void {
+  const err = new Error(msg);
+  onProgress({ stage: 'error', percent: 0, error: msg });
+  reject(err);
+}
+
+function request(
+  url: string,
+  onProgress: (p: DownloadProgress) => void,
+  resolve: (f: string) => void,
+  reject: (e: Error) => void,
+  destDir: string,
+  tmpFile: string,
+  modelFile: string,
+): void {
+  https.get(url, (res) => {
+    // Follow redirect
+    if (res.statusCode === 301 || res.statusCode === 302) {
+      const location = res.headers.location;
+      if (!location) {
+        fail(reject, onProgress, 'Redirect without Location header');
+        return;
+      }
+      request(location, onProgress, resolve, reject, destDir, tmpFile, modelFile);
+      return;
+    }
+
+    // Reject non-2xx responses (404, 403, 500, etc.)
+    if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
+      fail(reject, onProgress, `Model download failed: HTTP ${res.statusCode}. The model file may not be published yet.`);
+      return;
+    }
+
+    pipeDownload(res, tmpFile, onProgress, () => {
+      extract(destDir, tmpFile, modelFile, onProgress, resolve, reject);
+    }, reject);
+  }).on('error', (err) => {
+    fail(reject, onProgress, err.message);
+  });
+}
+
 export function ensureModel(
   modelDir: string,
   onProgress: (p: DownloadProgress) => void,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const modelFile = path.join(modelDir, 'sensevoice-small', 'model.onnx');
+    const funasrDir = path.join(modelDir, 'funasr');
+    const modelFile = path.join(funasrDir, 'paraformer-large-int8.onnx');
 
     if (fs.existsSync(modelFile)) {
       onProgress({ stage: 'done', percent: 100 });
@@ -26,28 +68,11 @@ export function ensureModel(
       return;
     }
 
-    fs.mkdirSync(modelDir, { recursive: true });
-    const tmpFile = path.join(modelDir, 'sensevoice-small.tar.gz');
+    fs.mkdirSync(funasrDir, { recursive: true });
+    const tmpFile = path.join(modelDir, 'funasr-paraformer-large.tar.gz');
 
     onProgress({ stage: 'downloading', percent: 0 });
-
-    https.get(MODEL_URL, (res) => {
-      // Follow redirect
-      if (res.statusCode === 302 || res.statusCode === 301) {
-        https.get(res.headers.location!, (redirectRes) => {
-          pipeDownload(redirectRes, tmpFile, onProgress, () => {
-            extract(modelDir, tmpFile, modelFile, onProgress, resolve, reject);
-          }, reject);
-        }).on('error', reject);
-        return;
-      }
-      pipeDownload(res, tmpFile, onProgress, () => {
-        extract(modelDir, tmpFile, modelFile, onProgress, resolve, reject);
-      }, reject);
-    }).on('error', (err) => {
-      onProgress({ stage: 'error', percent: 0, error: err.message });
-      reject(err);
-    });
+    request(MODEL_URL, onProgress, resolve, reject, funasrDir, tmpFile, modelFile);
   });
 }
 
@@ -79,7 +104,7 @@ function pipeDownload(
 }
 
 function extract(
-  modelDir: string,
+  destDir: string,
   tmpFile: string,
   modelFile: string,
   onProgress: (p: DownloadProgress) => void,
@@ -88,12 +113,12 @@ function extract(
 ): void {
   try {
     onProgress({ stage: 'extracting', percent: 100 });
-    execSync(`tar -xzf "${tmpFile}" -C "${modelDir}"`, { stdio: 'pipe' });
+    execSync(`tar -xzf "${tmpFile}" -C "${destDir}"`, { stdio: 'pipe' });
     fs.unlinkSync(tmpFile);
     onProgress({ stage: 'done', percent: 100 });
     resolve(modelFile);
   } catch (err: any) {
-    onProgress({ stage: 'error', percent: 0, error: err.message });
-    reject(err);
+    try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+    fail(reject, onProgress, err.message);
   }
 }

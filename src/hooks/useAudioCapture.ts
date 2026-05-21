@@ -68,7 +68,13 @@ export function useAudioCapture() {
   const animFrameRef = useRef<number>(0);
   const pcmChunksRef = useRef<Float32Array[]>([]);
   const sampleRateRef = useRef(48000);
+  const pauseCountRef = useRef(0);
+  const silenceFramesRef = useRef(0);
+  const inSilenceRef = useRef(false);
   const TARGET_RATE = 16000;
+
+  const SILENCE_RMS = 0.02;
+  const PAUSE_FRAMES = 2;
 
   const startCapture = useCallback(async () => {
     try {
@@ -104,12 +110,31 @@ export function useAudioCapture() {
       scriptNode.onaudioprocess = (event) => {
         const inputData = event.inputBuffer.getChannelData(0);
         pcmChunksRef.current.push(new Float32Array(inputData));
+
+        // RMS-based pause detection
+        let sum = 0;
+        for (let j = 0; j < inputData.length; j++) sum += inputData[j] * inputData[j];
+        const rms = Math.sqrt(sum / inputData.length);
+        if (rms < SILENCE_RMS) {
+          silenceFramesRef.current++;
+          if (silenceFramesRef.current >= PAUSE_FRAMES && !inSilenceRef.current) {
+            inSilenceRef.current = true;
+            pauseCountRef.current++;
+          }
+        } else {
+          silenceFramesRef.current = 0;
+          inSilenceRef.current = false;
+        }
       };
 
       source.connect(scriptNode);
       scriptNode.connect(audioCtx.destination);
 
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      pauseCountRef.current = 0;
+      silenceFramesRef.current = 0;
+      inSilenceRef.current = false;
 
       const loop = () => {
         analyser.getByteTimeDomainData(dataArray);
@@ -119,8 +144,7 @@ export function useAudioCapture() {
           sum += v * v;
         }
         const rms = Math.sqrt(sum / dataArray.length);
-        const level = Math.min(1, rms * 4);
-        setAudioLevel(level);
+        setAudioLevel(Math.min(1, rms * 4));
         animFrameRef.current = requestAnimationFrame(loop);
       };
       loop();
@@ -133,7 +157,7 @@ export function useAudioCapture() {
     }
   }, []);
 
-  const stopCapture = useCallback((): ArrayBuffer | null => {
+  const stopCapture = useCallback((): { wav: ArrayBuffer; pauseCount: number } | null => {
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = 0;
@@ -152,7 +176,6 @@ export function useAudioCapture() {
     }
     setAudioLevel(0);
 
-    // Encode collected PCM as WAV
     const chunks = pcmChunksRef.current;
     if (chunks.length === 0) return null;
     const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
@@ -163,9 +186,10 @@ export function useAudioCapture() {
       offset += chunk.length;
     }
     pcmChunksRef.current = [];
-    console.log('[Audio] Stop: total samples =', totalLength, 'srcRate =', sampleRateRef.current, 'targetRate =', TARGET_RATE);
+    const pauseCount = pauseCountRef.current;
+    console.log('[Audio] Stop: samples =', totalLength, 'pauses =', pauseCount);
     const resampled = resample(combined, sampleRateRef.current, TARGET_RATE);
-    return encodeWAV(resampled, TARGET_RATE);
+    return { wav: encodeWAV(resampled, TARGET_RATE), pauseCount };
   }, []);
 
   return { audioLevel, startCapture, stopCapture };

@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 export interface VoiceStateChange {
-  state: 'idle' | 'recording' | 'recognizing' | 'success' | 'error';
+  state: 'idle' | 'recording' | 'recognizing' | 'refining' | 'success' | 'error';
 }
 
 export interface RecognitionDone {
@@ -53,7 +53,32 @@ const api = {
   },
 
   // Send audio buffer to main process for transcription
-  transcribe: (audioBuffer: ArrayBuffer, language?: string) => ipcRenderer.invoke('voice:transcribe', audioBuffer, language),
+  transcribe: (audioBuffer: ArrayBuffer, language?: string, opts?: {
+    translate?: boolean; translateTarget?: string; dictionary?: Array<{word: string; replace: string}>;
+  }) => ipcRenderer.invoke('voice:transcribe', audioBuffer, language, opts),
+
+  // Stats & history
+  getStats: () => ipcRenderer.invoke('stats:get'),
+  getHistory: () => ipcRenderer.invoke('history:get'),
+  clearHistory: () => ipcRenderer.invoke('history:clear'),
+
+  // Translate mode
+  setTranslateModifier: (keyName: string) => ipcRenderer.invoke('settings:set-translate-modifier', keyName),
+  onTranslateMode: (callback: (data: { enabled: boolean }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { enabled: boolean }) => callback(data);
+    ipcRenderer.on('voice:translate-mode', handler);
+    return () => ipcRenderer.removeListener('voice:translate-mode', handler);
+  },
+
+  // LLM / Refinement settings
+  getApiKey: () => ipcRenderer.invoke('settings:get-api-key'),
+  setApiKey: (key: string) => ipcRenderer.invoke('settings:set-api-key', key),
+  saveLlmSettings: (settings: { refineEnabled?: boolean; llmModel?: string; llmBaseUrl?: string; asrProvider?: string }) =>
+    ipcRenderer.invoke('settings:save-llm-settings', settings),
+  initRefinement: () => ipcRenderer.invoke('settings:init-refinement'),
+  getRefinementStatus: () => ipcRenderer.invoke('settings:refinement-status'),
+  getSystemLocale: () => ipcRenderer.invoke('settings:get-system-locale') as Promise<string>,
+  setUiLanguage: (lang: string) => ipcRenderer.invoke('settings:set-ui-language', lang),
 };
 
 contextBridge.exposeInMainWorld('tingmo', api);

@@ -8,6 +8,7 @@ export interface RecognitionResult {
 export interface IRecognitionProvider {
   readonly name: string;
   readonly type: 'local' | 'api';
+  readonly vadEnabled: boolean;
 
   initialize(): Promise<boolean>;
   transcribe(audioBuffer: Buffer, sampleRate: number, lang?: string): Promise<RecognitionResult>;

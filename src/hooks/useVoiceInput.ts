@@ -1,27 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 
-export type VoiceState = 'idle' | 'recording' | 'recognizing' | 'success' | 'error';
+export type VoiceState = 'idle' | 'recording' | 'recognizing' | 'refining' | 'success' | 'error';
 
 interface VoiceInputState {
   state: VoiceState;
   charCount: number | null;
   errorText: string | null;
-}
-
-declare global {
-  interface Window {
-    tingmo: {
-      onVoiceStateChange: (cb: (data: { state: VoiceState }) => void) => () => void;
-      onRecognitionDone: (cb: (data: { charCount: number; durationMs: number }) => void) => () => void;
-      onInjectFailed: (cb: (data: { text: string }) => void) => () => void;
-      finishRecording: () => Promise<void>;
-      cancelRecording: () => Promise<void>;
-      reportCaptureError: (message: string) => Promise<void>;
-      retryInject: (text: string) => Promise<{ success: boolean }>;
-      copyText: (text: string) => Promise<void>;
-      transcribe: (audioBuffer: ArrayBuffer, language?: string) => Promise<void>;
-    };
-  }
 }
 
 export function useVoiceInput() {
@@ -30,6 +14,7 @@ export function useVoiceInput() {
     charCount: null,
     errorText: null,
   });
+  const [translateMode, setTranslateMode] = useState(false);
 
   useEffect(() => {
     const api = window.tingmo;
@@ -38,8 +23,9 @@ export function useVoiceInput() {
     const unsub1 = api.onVoiceStateChange((data) => {
       setVoiceState((prev) => ({
         ...prev,
-        state: data.state,
+        state: data.state as VoiceState,
       }));
+      if (data.state === 'idle') setTranslateMode(false);
     });
 
     const unsub2 = api.onRecognitionDone((data) => {
@@ -58,10 +44,15 @@ export function useVoiceInput() {
       });
     });
 
+    const unsub4 = (api as any).onTranslateMode?.((data: { enabled: boolean }) => {
+      setTranslateMode(data.enabled);
+    });
+
     return () => {
       unsub1();
       unsub2();
       unsub3();
+      unsub4?.();
     };
   }, []);
 
@@ -89,6 +80,7 @@ export function useVoiceInput() {
     state: voiceState.state,
     charCount: voiceState.charCount,
     errorText: voiceState.errorText,
+    translateMode,
     retry,
     copy,
     finish,
