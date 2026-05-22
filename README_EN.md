@@ -2,7 +2,7 @@
 
 > AI-powered voice input for Windows | 🎤 Vibe Coding Project
 
-![version](https://img.shields.io/badge/version-0.2-orange)
+![version](https://img.shields.io/badge/version-V0.2.0-orange)
 ![platform](https://img.shields.io/badge/platform-Windows%20x64-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![vibe](https://img.shields.io/badge/vibe%20coding-yes-ff69b4)

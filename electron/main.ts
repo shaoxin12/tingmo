@@ -8,8 +8,21 @@ import { duckSystemAudio, unduckSystemAudio } from './audio-ducking';
 import { addRecordingStats, addHistoryEntry, loadStats, loadHistory, clearHistory } from './stats-history';
 
 // Single instance lock — prevent double tray icon
-if (!app.requestSingleInstanceLock()) {
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
   app.quit();
+} else {
+  app.on('second-instance', () => {
+    // User tried to launch a second instance — show the existing window
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      if (settingsWindow.isMinimized()) settingsWindow.restore();
+      settingsWindow.show();
+      settingsWindow.focus();
+    } else {
+      createSettingsWindow();
+    }
+  });
 }
 
 const koffi = require('koffi');
@@ -693,6 +706,9 @@ app.whenReady().then(async () => {
   const initLocale = app.getLocale()?.startsWith('zh') ? 'zh-CN' : 'en';
   tray = createTray(initLocale, createSettingsWindow);
   startHotkey();
+
+  // Show settings on first launch so user knows the app started
+  createSettingsWindow();
 });
 
 app.on('window-all-closed', () => {

@@ -108,7 +108,7 @@ export const SettingsWindow: React.FC = () => {
           </div>
         </div>
         <div className="nb-sidebar-bottom">
-          <div className="nb-sidebar-ver">v0.1.0</div>
+          <div className="nb-sidebar-ver">v0.2.0</div>
         </div>
       </nav>
 

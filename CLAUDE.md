@@ -1,8 +1,8 @@
-# 听墨 (TingMo) v0.2 — Windows 桌面 AI 语音输入法
+# 听墨 (TingMo) v0.2.0 — Windows 桌面 AI 语音输入法
 
 按右 Alt 开始录音，说话，再按右 Alt 停止，语音自动转文字注入光标。右 Alt + 右 Shift 触发翻译模式。
 
-**v0.2**: Paraformer-large INT8 本地 ASR + CT-Transformer 标点 + LLM 润色（OpenAI 兼容 API）
+**v0.2.0**: Paraformer-large INT8 本地 ASR + CT-Transformer 标点 + LLM 润色（OpenAI 兼容 API）
 
 ## 技术栈
 

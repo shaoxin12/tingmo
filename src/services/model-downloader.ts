@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 
-const MODEL_URL = 'https://github.com/shaoxin12/tingmo/releases/download/v0.2/tingmo-models-v0.2.tar.gz';
+const MODEL_URL = 'https://github.com/shaoxin12/tingmo/releases/download/v0.2.0/tingmo-models-v0.2.0.tar.gz';
 
 export interface DownloadProgress {
   stage: 'downloading' | 'extracting' | 'done' | 'error';
@@ -71,7 +71,7 @@ export function ensureModel(
     }
 
     fs.mkdirSync(funasrDir, { recursive: true });
-    const tmpFile = path.join(modelDir, 'tingmo-models-v0.2.tar.gz');
+    const tmpFile = path.join(modelDir, 'tingmo-models-v0.2.0.tar.gz');
 
     onProgress({ stage: 'downloading', percent: 0 });
     request(MODEL_URL, onProgress, resolve, reject, funasrDir, tmpFile, asrModel);
