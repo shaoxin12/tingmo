@@ -38,7 +38,7 @@ export const FloatingWindow: React.FC = () => {
           translateTarget,
           dictionary: useDictionary ? dictionary : [],
         };
-        (window.tingmo as any).transcribe(result.wav, language, opts);
+        window.tingmo.transcribe(result.wav, language, opts);
       } else if (!result) {
         window.tingmo?.reportCaptureError(t('error.noAudioCaptured'));
       }
@@ -47,7 +47,7 @@ export const FloatingWindow: React.FC = () => {
     } else if (state === 'error') {
       setToneClass('error');
     }
-  }, [state, startCapture, stopCapture, translateMode, translateTarget, useDictionary, dictionary]);
+  }, [state, startCapture, stopCapture, language, translateMode, translateTarget, useDictionary, dictionary, t]);
 
   if (state === 'idle') return null;
 

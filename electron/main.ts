@@ -704,7 +704,11 @@ app.whenReady().then(async () => {
   initRecognition();
 
   const initLocale = app.getLocale()?.startsWith('zh') ? 'zh-CN' : 'en';
-  tray = createTray(initLocale, createSettingsWindow);
+  tray = createTray(initLocale, createSettingsWindow, () => {
+    recognitionReady = false;
+    recognitionProvider = null;
+    initRecognition();
+  });
   startHotkey();
 
   // Show settings on first launch so user knows the app started
