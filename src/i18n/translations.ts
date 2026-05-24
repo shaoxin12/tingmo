@@ -89,6 +89,14 @@ const D: Record<string, LocaleMap> = {
   'model.inferenceFrameworkValue':{'zh-CN':'ONNX Runtime','zh-TW':'ONNX Runtime',en:'ONNX Runtime',  ja:'ONNX Runtime',   ko:'ONNX Runtime' },
   'model.size':                 { 'zh-CN': '体积',     'zh-TW': '體積',     en: 'Size',              ja: 'サイズ',        ko: '크기' },
   'model.sizeValue':            { 'zh-CN': '~232 MB',  'zh-TW': '~232 MB',  en: '~232 MB',           ja: '~232 MB',       ko: '~232 MB' },
+  'model.notDownloaded':    { 'zh-CN': '模型未下载',   'zh-TW': '模型未下載',   en: 'Model not downloaded', ja: 'モデル未ダウンロード', ko: '모델 미다운로드' },
+  'model.download':         { 'zh-CN': '下载模型',     'zh-TW': '下載模型',     en: 'Download Model',      ja: 'モデルをダウンロード', ko: '모델 다운로드' },
+  'model.downloading':      { 'zh-CN': '下载中',       'zh-TW': '下載中',       en: 'Downloading',         ja: 'ダウンロード中',       ko: '다운로드 중' },
+  'model.extracting':       { 'zh-CN': '解压中',       'zh-TW': '解壓中',       en: 'Extracting',          ja: '展開中',               ko: '압축 해제 중' },
+  'model.ready':            { 'zh-CN': '模型就绪',     'zh-TW': '模型就緒',     en: 'Model ready',         ja: 'モデル準備完了',       ko: '모델 준비 완료' },
+  'model.error':            { 'zh-CN': '下载失败',     'zh-TW': '下載失敗',     en: 'Download failed',     ja: 'ダウンロード失敗',     ko: '다운로드 실패' },
+  'model.retry':            { 'zh-CN': '重试',         'zh-TW': '重試',         en: 'Retry',               ja: '再試行',               ko: '재시도' },
+  'model.checking':         { 'zh-CN': '检查中...',    'zh-TW': '檢查中...',    en: 'Checking...',         ja: '確認中...',            ko: '확인 중...' },
 
   // ── History tab ────────────────────────────────────────
   'history.totalDuration':  { 'zh-CN': '累计时长', 'zh-TW': '累計時長', en: 'Total duration',  ja: '累計時間',    ko: '총 시간' },
@@ -171,6 +179,8 @@ const D: Record<string, LocaleMap> = {
   'onboarding.next':             { 'zh-CN': '下一步', 'zh-TW': '下一步', en: 'Next', ja: '次へ', ko: '다음' },
   'onboarding.skip':             { 'zh-CN': '跳过引导', 'zh-TW': '跳過引導', en: 'Skip', ja: 'スキップ', ko: '건너뛰기' },
   'onboarding.start':            { 'zh-CN': '开始使用', 'zh-TW': '開始使用', en: 'Get started', ja: '始める', ko: '시작하기' },
+  'onboarding.modelTitle':      { 'zh-CN': '下载语音模型', 'zh-TW': '下載語音模型', en: 'Download voice model', ja: '音声モデルのダウンロード', ko: '음성 모델 다운로드' },
+  'onboarding.modelDesc':       { 'zh-CN': '本地引擎需要一个语音模型（约 230 MB）。你可以现在下载，也可以稍后在设置中下载。', 'zh-TW': '本地引擎需要一個語音模型（約 230 MB）。你可以現在下載，也可以稍後在設定中下載。', en: 'The local engine requires a voice model (~230 MB). You can download it now or later in Settings.', ja: 'ローカルエンジンには音声モデル（約230MB）が必要です。今すぐダウンロードするか、後で設定からダウンロードできます。', ko: '로컬 엔진에는 음성 모델(약 230MB)이 필요합니다. 지금 다운로드하거나 나중에 설정에서 할 수 있습니다.' },
 
   // ── Overview ─────────────────────────────────────────
   'overview.loading':       { 'zh-CN': '加载中...',  'zh-TW': '載入中...',  en: 'Loading...',           ja: '読み込み中...',      ko: '로딩 중...' },

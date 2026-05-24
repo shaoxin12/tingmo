@@ -35,11 +35,13 @@ const api = {
   copyText: (text: string) => ipcRenderer.invoke('voice:copy-text', text),
 
   // Model download progress
-  onModelProgress: (callback: (data: { stage: string; percent: number }) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, data: { stage: string; percent: number }) => callback(data);
+  onModelProgress: (callback: (data: { stage: string; percent: number; error?: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { stage: string; percent: number; error?: string }) => callback(data);
     ipcRenderer.on('model:progress', handler);
     return () => ipcRenderer.removeListener('model:progress', handler);
   },
+  ensureModel: () => ipcRenderer.invoke('model:ensure') as Promise<{ ok: boolean; path?: string; error?: string }>,
+  checkModel: () => ipcRenderer.invoke('model:check') as Promise<{ exists: boolean; path?: string }>,
 
   // Send audio buffer to main process for transcription
   transcribe: (audioBuffer: ArrayBuffer, language?: string, opts?: {

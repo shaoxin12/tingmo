@@ -5,7 +5,7 @@ import {
   VK_ESCAPE,
   KEY_DOWN_MESSAGES,
   KEY_UP_MESSAGES,
-  getRightAltEventAction,
+  getHotkeyEventAction,
 } from './hotkey-events';
 
 const user32 = koffi.load('user32.dll');
@@ -89,7 +89,7 @@ export function startHotkey(vkCode?: number): void {
       }
 
       // Right Alt handling
-      const action = getRightAltEventAction({
+      const action = getHotkeyEventAction({
         nCode,
         message: Number(wParam),
         vkCode: event?.vkCode ?? 0,

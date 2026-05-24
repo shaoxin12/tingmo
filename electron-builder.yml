@@ -9,9 +9,6 @@ files:
   - dist-electron
   - package.json
 asar: true
-extraResources:
-  - from: assets/models
-    to: models
 asarUnpack:
   - node_modules/onnxruntime-node/**
   - node_modules/koffi/**

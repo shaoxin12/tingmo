@@ -36,6 +36,10 @@ interface TingMoAPI {
   saveAppSettings: (settings: Record<string, unknown>) => Promise<void>;
   onSettingsChanged: (cb: (data: { muteOnRecord?: boolean; recordMode?: string }) => void) => () => void;
 
+  // Model download
+  onModelProgress: (cb: (data: { stage: string; percent: number; error?: string }) => void) => () => void;
+  ensureModel: () => Promise<{ ok: boolean; path?: string; error?: string }>;
+  checkModel: () => Promise<{ exists: boolean; path?: string }>;
   // Auto-update
   onUpdateAvailable: (cb: (data: { version: string }) => void) => () => void;
   onUpdateProgress: (cb: (data: { percent: number }) => void) => () => void;

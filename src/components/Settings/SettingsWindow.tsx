@@ -5,6 +5,7 @@ import { HotkeyRecorder } from './HotkeyRecorder';
 import { NbSelect } from './NbSelect';
 import { HomePanel } from './HomePanel';
 import { DictionaryPanel } from './DictionaryPanel';
+import { ModelPanel } from './ModelPanel';
 import { UpdatePanel } from './UpdatePanel';
 import { MicDevicePicker } from './MicDevicePicker';
 
@@ -131,14 +132,7 @@ export const SettingsWindow: React.FC = () => {
                     </div>
                   </>
                 )}
-                {asrProvider === 'local' && (
-                  <>
-                    <div className="nb-hr" />
-                    <div className="nb-row"><span className="nb-label">{t('model.asrEngine')}</span><span className="nb-value">{t('model.asrEngineValue')}</span></div>
-                    <div className="nb-hr" />
-                    <div className="nb-row"><span className="nb-label">{t('model.inferenceFramework')}</span><span className="nb-value">{t('model.inferenceFrameworkValue')}</span></div>
-                  </>
-                )}
+                {asrProvider === 'local' && <ModelPanel />}
               </div>
             </section>
 
